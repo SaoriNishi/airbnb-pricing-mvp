@@ -1,9 +1,10 @@
+
 <!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>札幌民泊 価格判断MVP v2</title>
+  <title>民泊価格判断MVP v3</title>
   <style>
     :root {
       color-scheme: light;
@@ -13,13 +14,9 @@
       --muted: #64748b;
       --line: #d9e2ec;
       --accent: #0f766e;
-      --accent-soft: #e0f2f1;
       --warn: #b45309;
-      --warn-soft: #fff4db;
       --down: #b91c1c;
-      --down-soft: #fee2e2;
       --keep: #475569;
-      --keep-soft: #eef2f7;
       --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
       font-family: "Segoe UI", "Yu Gothic UI", "Hiragino Sans", Meiryo, sans-serif;
     }
@@ -45,10 +42,10 @@
     }
 
     main {
-      width: min(1200px, calc(100% - 32px));
+      width: min(1240px, calc(100% - 32px));
       margin: 24px auto 40px;
       display: grid;
-      grid-template-columns: 360px 1fr;
+      grid-template-columns: 380px 1fr;
       gap: 20px;
       align-items: start;
     }
@@ -147,7 +144,7 @@
     .metric strong {
       display: block;
       margin-top: 8px;
-      font-size: 23px;
+      font-size: 22px;
       line-height: 1.18;
       overflow-wrap: anywhere;
     }
@@ -164,12 +161,13 @@
       white-space: nowrap;
     }
 
-    .badge.up { color: var(--warn); background: var(--warn-soft); }
-    .badge.down { color: var(--down); background: var(--down-soft); }
-    .badge.keep { color: var(--keep); background: var(--keep-soft); }
+    .badge.up { color: var(--warn); background: #fff4db; }
+    .badge.down { color: var(--down); background: #fee2e2; }
+    .badge.keep { color: var(--keep); background: #eef2f7; }
     .badge.high { color: #065f46; background: #d1fae5; }
     .badge.medium { color: #92400e; background: #fef3c7; }
     .badge.low { color: #991b1b; background: #fee2e2; }
+    .badge.hypothesis { color: #475569; background: #e2e8f0; }
 
     .note {
       margin: 0;
@@ -185,7 +183,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 880px;
+      min-width: 980px;
     }
 
     th, td {
@@ -203,7 +201,7 @@
       white-space: nowrap;
     }
 
-    .reason { max-width: 340px; line-height: 1.55; }
+    .reason { max-width: 360px; line-height: 1.55; }
 
     .factors {
       padding: 18px;
@@ -232,6 +230,11 @@
     .factor-name { color: var(--muted); font-weight: 800; }
     .factor-value { font-size: 18px; font-weight: 900; }
     .factor p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .source-list { padding: 18px; display: grid; gap: 10px; }
+    .source-item { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: #fbfdff; }
+    .source-item strong { display: block; margin-bottom: 6px; }
+    .source-item p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
+    a { color: #0f766e; }
 
     @media (max-width: 960px) {
       main { grid-template-columns: 1fr; }
@@ -241,14 +244,25 @@
 </head>
 <body>
   <header>
-    <h1>札幌民泊 価格判断MVP v2</h1>
-    <p class="subtitle">推奨価格に加えて、係数の根拠レベルと信頼スコアを表示します。現段階の係数は「統計的に証明済み」ではなく、MVP用の仮説として扱います。</p>
+    <h1 id="appTitle">民泊価格判断MVP v3</h1>
+    <p class="subtitle" id="appSubtitle">エリア別の基準設定、推奨価格、係数の根拠レベル、参照データの種類を同時に確認できます。現段階の係数は実績で確定した値ではなく、検証前の仮説係数です。</p>
   </header>
 
   <main>
     <section>
       <h2 class="panel-title">入力</h2>
       <form id="priceForm">
+        <label>
+          エリア
+          <select id="city">
+            <option value="sapporo">札幌</option>
+            <option value="nagoya">名古屋</option>
+            <option value="tokyo">東京</option>
+            <option value="osaka">大阪</option>
+            <option value="fukuoka">福岡</option>
+          </select>
+        </label>
+
         <label>
           対象日
           <input id="targetDate" type="date">
@@ -324,7 +338,7 @@
 
         <div class="actions">
           <button type="submit">計算する</button>
-          <button class="secondary" type="button" id="sampleButton">サンプル値</button>
+          <button class="secondary" type="button" id="sampleButton">エリア初期値</button>
         </div>
       </form>
     </section>
@@ -356,6 +370,7 @@
         <table>
           <thead>
             <tr>
+              <th>エリア</th>
               <th>対象日</th>
               <th>曜日</th>
               <th>イベント</th>
@@ -373,6 +388,9 @@
 
       <h3 class="panel-title">係数の信ぴょう性</h3>
       <div class="factors" id="factorList"></div>
+
+      <h3 class="panel-title">参照データの考え方</h3>
+      <div class="source-list" id="sourceList"></div>
     </section>
   </main>
 
@@ -385,6 +403,7 @@
 
     const form = document.querySelector("#priceForm");
     const inputs = {
+      city: document.querySelector("#city"),
       targetDate: document.querySelector("#targetDate"),
       dayType: document.querySelector("#dayType"),
       basePrice: document.querySelector("#basePrice"),
@@ -396,6 +415,74 @@
       eventLevel: document.querySelector("#eventLevel"),
       occupancy: document.querySelector("#occupancy"),
       leadDays: document.querySelector("#leadDays")
+    };
+
+    const cityProfiles = {
+      sapporo: {
+        name: "札幌",
+        basePrice: 12000,
+        minPrice: 8000,
+        maxPrice: 35000,
+        hotelPrice: 18000,
+        airbnbPrice: 16000,
+        peakMonths: [2, 7, 8, 12],
+        shoulderMonths: [1, 6, 9],
+        dayFactors: { weekday: 1, friday: 1.12, saturday: 1.22, holiday: 1.28 },
+        eventFactors: { none: 1, small: 1.12, large: 1.32 },
+        notes: "雪まつり、夏休み、年末年始、ドーム公演の影響を受けやすい想定。"
+      },
+      nagoya: {
+        name: "名古屋",
+        basePrice: 11000,
+        minPrice: 7500,
+        maxPrice: 32000,
+        hotelPrice: 15000,
+        airbnbPrice: 14500,
+        peakMonths: [3, 8, 11, 12],
+        shoulderMonths: [4, 5, 10],
+        dayFactors: { weekday: 1, friday: 1.1, saturday: 1.18, holiday: 1.24 },
+        eventFactors: { none: 1, small: 1.1, large: 1.26 },
+        notes: "ドーム公演、展示会、連休需要を受けやすい想定。"
+      },
+      tokyo: {
+        name: "東京",
+        basePrice: 16000,
+        minPrice: 10000,
+        maxPrice: 50000,
+        hotelPrice: 24000,
+        airbnbPrice: 22000,
+        peakMonths: [3, 4, 8, 11, 12],
+        shoulderMonths: [5, 7, 10],
+        dayFactors: { weekday: 1, friday: 1.08, saturday: 1.16, holiday: 1.22 },
+        eventFactors: { none: 1, small: 1.08, large: 1.22 },
+        notes: "通年需要が強いため、曜日・イベントの上振れは控えめに設定。"
+      },
+      osaka: {
+        name: "大阪",
+        basePrice: 14000,
+        minPrice: 9000,
+        maxPrice: 45000,
+        hotelPrice: 21000,
+        airbnbPrice: 19000,
+        peakMonths: [3, 4, 8, 11, 12],
+        shoulderMonths: [5, 7, 10],
+        dayFactors: { weekday: 1, friday: 1.1, saturday: 1.18, holiday: 1.25 },
+        eventFactors: { none: 1, small: 1.1, large: 1.28 },
+        notes: "観光、ライブ、展示会、テーマパーク需要を受けやすい想定。"
+      },
+      fukuoka: {
+        name: "福岡",
+        basePrice: 11500,
+        minPrice: 8000,
+        maxPrice: 34000,
+        hotelPrice: 16500,
+        airbnbPrice: 15000,
+        peakMonths: [3, 5, 8, 11],
+        shoulderMonths: [4, 7, 10],
+        dayFactors: { weekday: 1, friday: 1.11, saturday: 1.2, holiday: 1.25 },
+        eventFactors: { none: 1, small: 1.11, large: 1.28 },
+        notes: "ドーム公演、連休、アジア圏インバウンド需要を受けやすい想定。"
+      }
     };
 
     const labels = {
@@ -423,6 +510,51 @@
       low: 0.35
     };
 
+    const sourceItems = [
+      {
+        title: "祝日・連休",
+        source: "内閣府 国民の祝日CSV",
+        status: "公的データ候補",
+        detail: "祝日判定は内閣府CSVを参照するのが最も堅い。現在の画面では手動選択。"
+      },
+      {
+        title: "宿泊需要・季節性",
+        source: "観光庁 宿泊旅行統計調査、自治体観光統計",
+        status: "公的データ候補",
+        detail: "都道府県別・月別の延べ宿泊者数や稼働率を見て、季節係数を補正する。現在は月別の仮説。"
+      },
+      {
+        title: "訪日需要",
+        source: "JNTO 訪日外客統計",
+        status: "公的データ候補",
+        detail: "インバウンドが強いエリアでは補助指標として使う。単独で日別価格に直結させない。"
+      },
+      {
+        title: "イベント",
+        source: "自治体・公式観光サイト・施設公式カレンダー",
+        status: "公式情報候補",
+        detail: "開催日だけでなく、会場距離、来場規模、競合在庫を加えるまで信頼度は低い。"
+      },
+      {
+        title: "ホテル平均価格",
+        source: "OTA/API/手入力CSV",
+        status: "手入力",
+        detail: "今は入力値をそのまま使用。将来は対象ホテル数、取得日、客室条件を記録する。"
+      },
+      {
+        title: "Airbnb競合価格",
+        source: "手入力、PMS、外部データ会社、低頻度取得",
+        status: "手入力",
+        detail: "今は入力値をそのまま使用。広さ、駅距離、レビュー、清掃費込み価格で補正が必要。"
+      },
+      {
+        title: "自社実績",
+        source: "予約CSV、iCal、PMS、閲覧数",
+        status: "最重要",
+        detail: "最終的には自社の予約成立価格、予約日、残日数、閲覧数で係数を再推定する。"
+      }
+    ];
+
     function clamp(value, min, max) {
       return Math.min(Math.max(value, min), max);
     }
@@ -431,11 +563,11 @@
       return Math.round(value / unit) * unit;
     }
 
-    function getSeasonFactor(targetDate) {
-      if (!targetDate) return 1;
+    function getSeasonFactor(targetDate, profile) {
+      if (!targetDate || !profile) return 1;
       const month = Number(targetDate.slice(5, 7));
-      if ([2, 7, 8, 12].includes(month)) return 1.15;
-      if ([1, 6, 9].includes(month)) return 1.06;
+      if (profile.peakMonths.includes(month)) return 1.15;
+      if (profile.shoulderMonths.includes(month)) return 1.06;
       return 1;
     }
 
@@ -464,55 +596,62 @@
       return 1;
     }
 
-    function buildFactors(values) {
+    function buildFactors(values, profile) {
       return [
         {
           key: "day",
           name: "曜日係数",
-          value: { weekday: 1, friday: 1.12, saturday: 1.2, holiday: 1.25 }[values.dayType],
+          value: profile.dayFactors[values.dayType],
           confidence: "medium",
-          basis: "一般的に週末・連休は上がりやすいが、札幌の自社物件データで未検証。"
+          dataStatus: "仮説",
+          basis: `${profile.name}の曜日差をエリア仮説として設定。実績の曜日別ADR・稼働率で補正予定。`
         },
         {
           key: "season",
           name: "季節係数",
-          value: getSeasonFactor(values.targetDate),
+          value: getSeasonFactor(values.targetDate, profile),
           confidence: "medium",
-          basis: "札幌の季節性をルール化。月単位なので雪まつりなど個別イベントは別扱いが必要。"
+          dataStatus: "公的データ候補",
+          basis: `${profile.name}のピーク月を仮設定。観光庁の宿泊旅行統計や自治体観光統計で検証する。`
         },
         {
           key: "event",
           name: "イベント係数",
-          value: { none: 1, small: 1.12, large: 1.3 }[values.eventLevel],
+          value: profile.eventFactors[values.eventLevel],
           confidence: "low",
-          basis: "イベント規模の入力が手動で、来訪者数・会場距離・競合在庫をまだ見ていない。"
+          dataStatus: "手動入力",
+          basis: "イベント規模は手動入力。公式イベント情報、会場距離、来場者規模、競合在庫を入れるまで信頼度は低い。"
         },
         {
           key: "hotel",
           name: "ホテル価格係数",
           value: getHotelFactor(values.hotelPrice, values.basePrice),
           confidence: values.hotelPrice > 0 ? "medium" : "low",
-          basis: "ホテル価格は需要の代理指標として有効。ただし入力価格の取得元・対象ホテル数で精度が変わる。"
+          dataStatus: "手入力",
+          basis: "ホテル価格は需要の代理指標。今は入力値を使用し、取得元ホテル数・条件は未管理。"
         },
         {
           key: "airbnb",
           name: "Airbnb競合係数",
           value: getAirbnbFactor(values.airbnbPrice, values.basePrice),
           confidence: values.airbnbPrice > 0 ? "medium" : "low",
-          basis: "周辺競合との比較は有効。ただし部屋サイズ・立地・レビュー差を補正していない。"
+          dataStatus: "手入力",
+          basis: "競合価格は入力値を使用。広さ、立地、レビュー、清掃費込み価格を未補正。"
         },
         {
           key: "occupancy",
           name: "予約状況係数",
           value: { low: 0.95, normal: 1, high: 1.12 }[values.occupancy],
           confidence: "medium",
-          basis: "自社の予約状況は強い材料。ただし市場全体の空室率ではないため過信は禁物。"
+          dataStatus: "自社実績候補",
+          basis: "自社の予約状況は強い材料。ただし市場全体の空室率ではないため過信しない。"
         },
         {
           key: "leadTime",
           name: "残日数係数",
           value: getLeadTimeFactor(values.leadDays, values.occupancy),
           confidence: "high",
+          dataStatus: "計算値",
           basis: "対象日までの日数は客観データ。直前空室の値下げルールとして使いやすい。"
         }
       ];
@@ -523,10 +662,10 @@
       return Math.round((total / factors.length) * 100);
     }
 
-    function buildReasons(values, factors, recommended) {
+    function buildReasons(values, factors, profile, recommended) {
       const reasons = [];
       if (values.dayType !== "weekday") reasons.push(`${labels[values.dayType]}で需要増を想定`);
-      if (factors.find((factor) => factor.key === "season").value > 1) reasons.push("札幌の季節需要を反映");
+      if (factors.find((factor) => factor.key === "season").value > 1) reasons.push(`${profile.name}の季節需要を反映`);
       if (values.eventLevel !== "none") reasons.push(`${labels[values.eventLevel]}あり`);
       if (factors.find((factor) => factor.key === "hotel").value > 1) reasons.push("ホテル価格が基準より高い");
       if (factors.find((factor) => factor.key === "airbnb").value > 1) reasons.push("競合Airbnb価格が高め");
@@ -538,6 +677,7 @@
 
     function calculate() {
       const values = {
+        city: inputs.city.value,
         targetDate: inputs.targetDate.value,
         dayType: inputs.dayType.value,
         basePrice: Number(inputs.basePrice.value),
@@ -551,7 +691,8 @@
         leadDays: Number(inputs.leadDays.value)
       };
 
-      const factors = buildFactors(values);
+      const profile = cityProfiles[values.city];
+      const factors = buildFactors(values, profile);
       const multiplier = factors.reduce((product, factor) => product * factor.value, 1);
       const rawPrice = values.basePrice * multiplier;
       const minPrice = Math.min(values.minPrice, values.maxPrice);
@@ -575,11 +716,13 @@
         badgeClass = "down";
       }
 
-      const reason = buildReasons(values, factors, recommended);
-      render(values, factors, recommended, rangeLow, rangeHigh, diff, decision, badgeClass, reason, confidence);
+      const reason = buildReasons(values, factors, profile, recommended);
+      render(values, profile, factors, recommended, rangeLow, rangeHigh, diff, decision, badgeClass, reason, confidence);
     }
 
-    function render(values, factors, recommended, rangeLow, rangeHigh, diff, decision, badgeClass, reason, confidence) {
+    function render(values, profile, factors, recommended, rangeLow, rangeHigh, diff, decision, badgeClass, reason, confidence) {
+      document.querySelector("#appTitle").textContent = `${profile.name} 民泊価格判断MVP v3`;
+      document.querySelector("#appSubtitle").textContent = `${profile.name}: ${profile.notes} 係数は仮説値なので、参照データと自社実績で検証して使います。`;
       document.querySelector("#recommendedPrice").textContent = yen.format(recommended);
       document.querySelector("#priceRange").textContent = `${yen.format(rangeLow)} - ${yen.format(rangeHigh)}`;
       document.querySelector("#priceDiff").textContent = `${diff >= 0 ? "+" : ""}${yen.format(diff)}`;
@@ -590,10 +733,11 @@
 
       const scoreClass = confidence >= 75 ? "high" : confidence >= 60 ? "medium" : "low";
       document.querySelector("#confidenceNote").innerHTML =
-        `信頼スコア: <span class="badge ${scoreClass}">${confidence}%</span>。この価格は確定値ではなく、係数仮説にもとづく判断材料です。特にイベント係数と競合価格係数は、実績データが集まるまで保守的に見るべきです。`;
+        `信頼スコア: <span class="badge ${scoreClass}">${confidence}%</span>。現在は外部データを自動取得していません。ホテル価格・Airbnb競合価格・イベント規模は手入力で、エリア別係数は仮説値です。`;
 
       document.querySelector("#resultBody").innerHTML = `
         <tr>
+          <td>${profile.name}</td>
           <td>${values.targetDate || "-"}</td>
           <td>${labels[values.dayType]}</td>
           <td>${labels[values.eventLevel]}</td>
@@ -613,7 +757,16 @@
             <span class="badge ${factor.confidence}">根拠 ${confidenceLabels[factor.confidence]}</span>
           </div>
           <div class="factor-value">x${factor.value.toFixed(2)}</div>
+          <p><span class="badge hypothesis">${factor.dataStatus}</span></p>
           <p>${factor.basis}</p>
+        </div>
+      `).join("");
+
+      document.querySelector("#sourceList").innerHTML = sourceItems.map((item) => `
+        <div class="source-item">
+          <strong>${item.title} <span class="badge hypothesis">${item.status}</span></strong>
+          <p>参照元: ${item.source}</p>
+          <p>${item.detail}</p>
         </div>
       `).join("");
     }
@@ -622,6 +775,18 @@
       const today = new Date();
       const offset = today.getTimezoneOffset() * 60000;
       inputs.targetDate.value = new Date(today - offset).toISOString().slice(0, 10);
+    }
+
+    function applyCityProfile() {
+      const profile = cityProfiles[inputs.city.value];
+      if (!profile) return;
+      inputs.basePrice.value = profile.basePrice;
+      inputs.currentPrice.value = Math.round(profile.basePrice * 1.15 / 500) * 500;
+      inputs.minPrice.value = profile.minPrice;
+      inputs.maxPrice.value = profile.maxPrice;
+      inputs.hotelPrice.value = profile.hotelPrice;
+      inputs.airbnbPrice.value = profile.airbnbPrice;
+      calculate();
     }
 
     form.addEventListener("submit", (event) => {
@@ -634,22 +799,11 @@
       input.addEventListener("change", calculate);
     });
 
-    document.querySelector("#sampleButton").addEventListener("click", () => {
-      inputs.basePrice.value = 12000;
-      inputs.currentPrice.value = 14000;
-      inputs.minPrice.value = 8000;
-      inputs.maxPrice.value = 35000;
-      inputs.hotelPrice.value = 18000;
-      inputs.airbnbPrice.value = 16000;
-      inputs.dayType.value = "saturday";
-      inputs.eventLevel.value = "large";
-      inputs.occupancy.value = "normal";
-      inputs.leadDays.value = 3;
-      calculate();
-    });
+    inputs.city.addEventListener("change", applyCityProfile);
+    document.querySelector("#sampleButton").addEventListener("click", applyCityProfile);
 
     setToday();
-    calculate();
+    applyCityProfile();
   </script>
 </body>
 </html>
